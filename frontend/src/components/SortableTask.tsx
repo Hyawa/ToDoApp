@@ -1,5 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ChevronUp, ChevronDown, GripVertical } from "lucide-react";
 import { TaskItem } from "./TaskItem";
 
 interface SortableTaskProps {
@@ -57,28 +58,41 @@ export function SortableTask({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
-    cursor: "grab",
+    opacity: isDragging ? 0.6 : 1,
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    width: "100%",
   };
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
+      {/* Beautiful Drag Handle & Reorder buttons with Lucide React Icons */}
+      <div 
+        className="reorder-actions" 
+        {...listeners} 
+        onClick={e => e.stopPropagation()}
+        style={{ cursor: "grab", display: "flex", flexDirection: "row", alignItems: "center", gap: "2px" }}
+      >
+        <GripVertical size={18} style={{ color: "var(--text-muted)", marginRight: "2px" }} />
+        <button className="reorder-btn" onClick={onMoveUp} title="Subir">
+          <ChevronUp size={16} />
+        </button>
+        <button className="reorder-btn" onClick={onMoveDown} title="Descer">
+          <ChevronDown size={16} />
+        </button>
+      </div>
+
       <TaskItem
         task={task}
         taskLists={list ? [list] : []}
         onClick={onClick}
         onToggleCompletion={onToggleCompletion}
-        onMoveUp={onMoveUp}
-        onMoveDown={onMoveDown}
         onDelete={onDelete}
-        onStartTask={onStartTask ? () => onStartTask(task.id) : undefined}
-        onRevertTask={onRevertTask ? () => onRevertTask(task.id) : undefined}
-        onCompleteTask={onCompleteTask ? () => onCompleteTask(task.id) : undefined}
+        onStartTask={onStartTask}
+        onRevertTask={onRevertTask}
+        onCompleteTask={onCompleteTask}
       />
-       <div className="reorder-actions" {...listeners} onClick={e => e.stopPropagation()}>
-         <button className="reorder-btn" onClick={onMoveUp} title="Subir">↑</button>
-         <button className="reorder-btn" onClick={onMoveDown} title="Descer">↓</button>
-       </div>
     </div>
   );
 }

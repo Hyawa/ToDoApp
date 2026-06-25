@@ -1,4 +1,4 @@
-import { Star, Circle, CheckCircle2, Play, Undo2, Archive } from 'lucide-react';
+import { Star, Circle, CheckCircle2, Play, Undo2, Trash2, Clock, Calendar, List as ListIcon } from 'lucide-react';
 import type { Task, TaskList } from '../types';
 
 interface TaskItemProps {
@@ -23,7 +23,7 @@ export function TaskItem({
   onDelete,
 }: TaskItemProps) {
   const taskList = taskLists.find(list => list.id === task.task_list);
-  const taskListColor = taskList?.color || '#cccccc';
+  const taskListColor = taskList?.color || 'var(--text-muted)';
   
   const handleToggleCompletion = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -49,21 +49,67 @@ export function TaskItem({
     e.stopPropagation();
     onDelete?.(e);
   };
+
+  // Check if all subtasks are done
+  const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+  const allSubtasksDone = hasSubtasks && task.subtasks!.every(s => s.is_completed);
   
   return (
-    <li className="task-item" onClick={onClick}>
-      <div className="task-left">
-        <button className="task-checkbox" onClick={handleToggleCompletion}>
-          {task.is_completed ? (
-            <CheckCircle2 size={20} color="#4CAF50" />
-          ) : (
-            <Circle size={20} color="#999" />
-          )}
-        </button>
-        <span className={`task-title ${task.is_completed ? 'completed' : ''}`}>{task.title}</span>
+    <div 
+      className={`task-item ${task.is_completed ? 'completed' : ''} ${allSubtasksDone ? 'all-subtasks-done' : ''}`} 
+      onClick={onClick}
+    >
+      {/* Checkbox */}
+      <div 
+        className={`checkbox-container ${task.is_completed ? 'checked' : ''}`} 
+        onClick={handleToggleCompletion}
+      >
+        {task.is_completed ? (
+          <CheckCircle2 size={20} />
+        ) : (
+          <Circle size={20} />
+        )}
       </div>
       
-      <div className="task-right">
+      {/* Task Content (Title & Meta) */}
+      <div className="task-content">
+        <span className="task-title">{task.title}</span>
+        
+        <div className="task-meta">
+          {taskList && (
+            <span className="meta-badge" style={{ borderLeft: `3px solid ${taskListColor}`, paddingLeft: '6px' }}>
+              {taskList.name}
+            </span>
+          )}
+          
+          {task.scheduled_time && (
+            <span className="meta-badge time-badge">
+              <Clock size={12} /> {task.scheduled_time.substring(0, 5)}
+            </span>
+          )}
+          
+          {task.estimated_time && (
+            <span className="meta-badge">
+              <Clock size={12} /> {
+                task.estimated_time === '5_MINUTES' ? '5m' :
+                task.estimated_time === '15_MINUTES' ? '15m' :
+                task.estimated_time === '30_MINUTES' ? '30m' :
+                task.estimated_time === '1_HOUR' ? '1h' :
+                task.estimated_time === '2_HOURS' ? '2h' : task.estimated_time
+              }
+            </span>
+          )}
+
+          {hasSubtasks && (
+            <span className={`meta-badge subtask-badge ${allSubtasksDone ? 'done' : ''}`}>
+              <ListIcon size={12} /> {task.subtasks!.filter(s => s.is_completed).length}/{task.subtasks!.length}
+            </span>
+          )}
+        </div>
+      </div>
+      
+      {/* Task Actions (Star & Control Buttons) */}
+      <div className="task-actions">
         {task.status === 'PENDING' && onStartTask && (
           <button className="task-action-btn" onClick={handleStartTask} title="Iniciar">
             <Play size={16} />
@@ -83,23 +129,15 @@ export function TaskItem({
         )}
 
         {onDelete && (
-          <button className="task-action-btn" onClick={handleDelete} title="Excluir">
-            <Archive size={16} />
+          <button className="task-action-btn delete-btn" onClick={handleDelete} title="Excluir">
+            <Trash2 size={16} />
           </button>
         )}
         
-        {taskList && (
-          <span
-            className="task-list-indicator"
-            style={{ backgroundColor: taskListColor }}
-            title={taskList.name}
-          />
-        )}
-        
         {task.is_starred && (
-          <Star size={16} fill="#FFD700" color="#FFD700" className="task-star" />
+          <Star size={16} fill="var(--warning)" color="var(--warning)" className="task-star" />
         )}
       </div>
-    </li>
+    </div>
   );
 }
