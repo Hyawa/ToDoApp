@@ -1,9 +1,14 @@
 from rest_framework import serializers
-from .models import Tag, Task, Subtask
+from .models import Tag, TaskList, Task, Subtask
 
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
+        fields = '__all__'
+
+class TaskListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskList
         fields = '__all__'
 
 class SubtaskSerializer(serializers.ModelSerializer):
