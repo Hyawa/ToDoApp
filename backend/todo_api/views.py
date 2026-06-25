@@ -33,14 +33,41 @@ class TaskViewSet(viewsets.ModelViewSet):
         is_starred = self.request.query_params.get('is_starred')
         if is_starred is not None:
             queryset = queryset.filter(is_starred=is_starred.lower() == 'true')
+        
+        # TASKS_FROM_DATABASE
+        tasks_data = list(queryset.values('id', 'title', 'start_date', 'due_date', 'scheduled_time', 'recurrence_type', 'repeat_monday', 'repeat_tuesday', 'repeat_wednesday', 'repeat_thursday', 'repeat_friday', 'repeat_saturday', 'repeat_sunday'))
+        logger.info(f"TASKS_FROM_DATABASE", extra={"count": len(tasks_data), "tasks": tasks_data})
             
         return queryset
 
     def perform_create(self, serializer):
-        # Log creation via API
-        logger.info(f"Task perform_create payload={self.request.data}")
+        # CREATE_REQUEST_RECEIVED
+        logger.info(f"CREATE_REQUEST_RECEIVED", extra={
+            "receivedDate": timezone.now().isoformat(),
+            "body": self.request.data
+        })
+        
+        # BEFORE_DB_SAVE
+        validated_data = serializer.validated_data
+        logger.info(f"BEFORE_DB_SAVE", extra={
+            "title": validated_data.get('title'),
+            "start_date": str(validated_data.get('start_date')),
+            "due_date": str(validated_data.get('due_date')),
+            "scheduled_time": str(validated_data.get('scheduled_time')),
+            "recurrence_type": validated_data.get('recurrence_type'),
+        })
+        
         initial_position = random.uniform(1000, 9000)
         instance = serializer.save(position=initial_position)
+        
+        # AFTER_DB_SAVE
+        logger.info(f"AFTER_DB_SAVE", extra={
+            "task_id": instance.id,
+            "title": instance.title,
+            "savedDate": str(instance.start_date),
+            "savedDueDate": str(instance.due_date),
+        })
+        
         logger.warning("TASK CRIADA", extra={"task_id": instance.id, "title": instance.title, "origin": "perform_create"})
 
     def perform_update(self, serializer):

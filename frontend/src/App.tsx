@@ -1,13 +1,45 @@
-import { useState, useEffect } from 'react';
-import { Plus, CheckCircle2, Circle, Star, Hash, Bell, ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import api from './services/api';
-import type { Task, TaskList } from './types';
 import { LeftSidebar } from './components/LeftSidebar';
 import { TaskModal } from './components/TaskModal';
 import { ListModal } from './components/ListModal';
 import { SubtasksSection } from './components/SubtasksSection';
+import { DraggableTaskList } from './components/DraggableTaskList';
 import { requestNotificationPermission, sendNotification } from './services/notification';
+import { isTaskVisible } from './utils/taskVisibility';
 import './index.css';
+
+// Tipos temporários até a definição formal ser localizada
+type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'ARCHIVED';
+type EstimatedTime = '5_MINUTES' | '15_MINUTES' | '30_MINUTES' | '1_HOUR' | '2_HOURS' | null;
+
+interface Task {
+  id: number;
+  title: string;
+  is_completed: boolean;
+  is_starred: boolean;
+  task_list: number;
+  position: number;
+  status: TaskStatus;
+  estimated_time: EstimatedTime;
+  scheduled_time?: string | null;
+  hide_until_due?: number | null;
+  recurrence_type?: string | null;
+  recurrence_days?: number[] | null;
+  start_date: string;
+  subtasks?: Array<{
+    id: number;
+    title: string;
+    is_completed: boolean;
+  }>;
+}
+
+interface TaskList {
+  id: number;
+  name: string;
+  color?: string;
+}
 
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -19,7 +51,7 @@ function App() {
   });
   
   const [activeFilter, setActiveFilter] = useState('ALL');
-  
+
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   
@@ -35,6 +67,23 @@ function App() {
         api.get<Task[]>('tasks/'),
         api.get<TaskList[]>('tasklists/')
       ]);
+      console.log("TASKS_FROM_API", tasksRes.data.map(t => ({
+        id: t.id,
+        title: t.title,
+        start_date: t.start_date,
+        due_date: t.due_date,
+        scheduled_time: t.scheduled_time,
+        recurrence_type: t.recurrence_type,
+        repeat_monday: t.repeat_monday,
+        repeat_tuesday: t.repeat_tuesday,
+        repeat_wednesday: t.repeat_wednesday,
+        repeat_thursday: t.repeat_thursday,
+        repeat_friday: t.repeat_friday,
+        repeat_saturday: t.repeat_saturday,
+        repeat_sunday: t.repeat_sunday,
+        is_completed: t.is_completed,
+        status: t.status,
+      })));
       console.log('Fetched tasks', tasksRes.status, 'count=', tasksRes.data.length, tasksRes.data.slice(0, 10));
       setTasks(tasksRes.data);
       setTaskLists(listsRes.data);
@@ -73,11 +122,18 @@ function App() {
   }, [tasks]);
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
+    console.log("APP_SAVE_TASK_DATA", taskData);
     try {
+      const payload = {
+        ...taskData,
+        start_date: taskData.start_date || new Date().toISOString().split('T')[0],
+      };
       if (taskData.id) {
-        await api.patch(`tasks/${taskData.id}/`, taskData);
+        const response = await api.patch(`tasks/${taskData.id}/`, payload);
+        console.log("APP_SAVE_RESPONSE", response.data);
       } else {
-        await api.post('tasks/', taskData);
+        const response = await api.post('tasks/', payload);
+        console.log("APP_SAVE_RESPONSE", response.data);
       }
       fetchData();
       
@@ -90,6 +146,21 @@ function App() {
     }
   };
 
+  const updateTaskStatus = async (taskId: number, status: TaskStatus) => {
+    try {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
+      await api.patch(`tasks/${taskId}/`, { status });
+      fetchData();
+    } catch (error) {
+      console.error('Error updating task status', error);
+      fetchData();
+    }
+  };
+
+  const startTask = (taskId: number) => updateTaskStatus(taskId, 'IN_PROGRESS');
+  const revertTask = (taskId: number) => updateTaskStatus(taskId, 'PENDING');
+  const completeTask = (taskId: number) => updateTaskStatus(taskId, 'COMPLETED');
+
   const toggleTaskCompletion = async (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -98,7 +169,7 @@ function App() {
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: newStatus } : t));
       const res = await api.patch(`tasks/${task.id}/`, { is_completed: newStatus });
       console.log('Toggle response', res.status, res.data);
-      fetchData(); // Refetch to handle recurrence generation
+      fetchData();
     } catch (error) {
       console.error('Error toggling task', error);
       fetchData();
@@ -154,23 +225,71 @@ function App() {
     }
   };
 
-  // Filtering Logic
-  const getFilteredTasks = () => {
-    let filtered = tasks;
-    const now = new Date();
+  const handleDeleteTask = async (id: number) => {
+    const confirmed = window.confirm('Tem certeza que deseja excluir esta tarefa?');
+    if (!confirmed) return;
 
-    // 1. Hide intelligently based on hide_until_due
-    filtered = filtered.filter(task => {
-      if (task.is_completed) return true; // Let completed tasks through, they are filtered later
-      if (!task.scheduled_time || task.hide_until_due === null) return true;
+    try {
+      await deleteTask(id);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting task', error);
+    }
+  };
+
+  const { displayTasks, futureTasks, inProgressTasks } = React.useMemo(() => {
+    const now = new Date();
+    const logVisibility = [];
+    let filtered = [];
+    const futureTasksList = [];
+    const inProgressTasksList = [];
+
+    // 1. Separar tarefas visíveis, futuras e em andamento
+    tasks.forEach(task => {
+      const visibility = isTaskVisible(task, now);
+      logVisibility.push({
+        id: task.id,
+        titulo: task.title,
+        repeticao: task.recurrence_type,
+        dias_repeticao: [
+          task.repeat_monday ? "Seg" : null,
+          task.repeat_tuesday ? "Ter" : null,
+          task.repeat_wednesday ? "Qua" : null,
+          task.repeat_thursday ? "Qui" : null,
+          task.repeat_friday ? "Sex" : null,
+          task.repeat_saturday ? "Sáb" : null,
+          task.repeat_sunday ? "Dom" : null
+        ].filter(Boolean).join(", ") || "N/A",
+        mostrar_tarefa: task.hide_until_due,
+        data_referencia: task.start_date + (task.scheduled_time ? ` ${task.scheduled_time}` : ""),
+        deve_exibir: visibility.visible,
+        motivo: visibility.reason
+      });
       
-      const [hours, minutes] = task.scheduled_time.split(':').map(Number);
-      const scheduledDate = new Date(task.start_date);
-      scheduledDate.setHours(hours, minutes, 0, 0);
-      
-      const showTime = new Date(scheduledDate.getTime() - task.hide_until_due * 60000);
-      return now >= showTime;
+      if (task.status === 'IN_PROGRESS') {
+        inProgressTasksList.push(task);
+      } else if (task.status === 'PENDING' && visibility.visible && !task.is_completed) {
+        filtered.push(task);
+      } else if (task.status === 'PENDING' && !task.is_completed) {
+        futureTasksList.push(task);
+      }
     });
+    
+    // Log dos resultados de visibilidade (apenas uma vez)
+    if (logVisibility.length > 0) {
+      console.log("=== Log de Visibilidade de Tarefas ===");
+      logVisibility.forEach(log => {
+        console.log(`id: ${log.id}`);
+        console.log(`titulo: ${log.titulo}`);
+        console.log(`repeticao: ${log.repeticao}`);
+        console.log(`dias_repeticao: ${log.dias_repeticao}`);
+        console.log(`mostrar_tarefa: ${log.mostrar_tarefa}`);
+        console.log(`data_referencia: ${log.data_referencia}`);
+        console.log(`deve_exibir: ${log.deve_exibir}`);
+        console.log(`motivo: ${log.motivo}`);
+        console.log("---");
+      });
+    }
 
     // 2. Sidebar Filters
     if (activeFilter === 'STARRED') {
@@ -179,18 +298,26 @@ function App() {
       filtered = filtered.filter(t => !t.is_completed);
     } else if (activeFilter === 'COMPLETED') {
       filtered = filtered.filter(t => t.is_completed);
+    } else if (activeFilter === 'FUTURE') {
+      filtered = futureTasksList;
+    } else if (activeFilter === 'IN_PROGRESS') {
+      filtered = inProgressTasksList;
     } else if (activeFilter !== 'ALL') {
       filtered = filtered.filter(t => t.task_list === Number(activeFilter));
     }
 
     // Sort: Pending first, then by position
-    return filtered.sort((a, b) => {
+    const sortedTasks = filtered.sort((a, b) => {
       if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
       return a.position - b.position;
     });
-  };
 
-  const displayTasks = getFilteredTasks();
+    return {
+      displayTasks: sortedTasks,
+      futureTasks: futureTasksList,
+      inProgressTasks: inProgressTasksList
+    };
+  }, [tasks, activeFilter]);
 
   return (
     <div className="layout-container">
@@ -215,60 +342,99 @@ function App() {
           </h1>
         </header>
 
-        <div className="task-list">
-          {displayTasks.map(task => {
-            const list = taskLists.find(l => l.id === task.task_list);
-            const subtasksDone = task.subtasks?.filter(s => s.is_completed).length || 0;
-            const hasSubtasks = task.subtasks && task.subtasks.length > 0;
-            const subtasksBadge = hasSubtasks ? `${subtasksDone}/${task.subtasks.length} concluídas` : null;
-            const isAllSubtasksDone = hasSubtasks && subtasksDone === task.subtasks.length;
-
-            // If we are in 'ALL' or a specific list, filter out completed ones to a separate section below? 
-            // The prompt says: "Ao concluir uma tarefa: Ela deve desaparecer imediatamente de My Tasks E aparecer automaticamente em Concluídas".
-            // So if activeFilter is ALL or a List, we should probably hide completed tasks.
-            // Let's hide completed tasks from ALL and custom lists, unless we are in the COMPLETED filter.
-            if (task.is_completed && activeFilter !== 'COMPLETED' && activeFilter !== 'STARRED') {
-               return null;
-            }
-
-            return (
-              <div 
-                key={task.id} 
-                className={`task-item ${task.is_completed ? 'completed' : ''} ${isAllSubtasksDone && !task.is_completed ? 'all-subtasks-done' : ''}`}
-                onClick={() => {
+        {activeFilter === 'FUTURE' ? (
+          <div className="future-tasks-section">
+            <h2>Tarefas Futuras</h2>
+            {futureTasks.length === 0 ? (
+              <p>Nenhuma tarefa futura encontrada.</p>
+            ) : (
+              <ul className="future-tasks-list">
+                {futureTasks.map(task => (
+                  <li key={task.id} className="future-task-item">
+                    <div className="future-task-header">
+                      <h3>{task.title}</h3>
+                      <span className="future-task-date">
+                        {task.start_date} {task.scheduled_time && `às ${task.scheduled_time}`}
+                      </span>
+                    </div>
+                    <p className="future-task-reason">
+                      Motivo: {isTaskVisible(task).reason}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : activeFilter === 'IN_PROGRESS' ? (
+          <div className="in-progress-tasks-section">
+            <h2>Em Andamento</h2>
+            {inProgressTasks.length === 0 ? (
+              <p>Nenhuma tarefa em andamento.</p>
+            ) : (
+              <DraggableTaskList
+                tasks={inProgressTasks}
+                taskLists={taskLists}
+                onTaskClick={(task) => {
                   setTaskToEdit(task);
                   setIsTaskModalOpen(true);
                 }}
-              >
-                <div className={`checkbox-container ${task.is_completed ? 'checked' : ''}`} onClick={(e) => toggleTaskCompletion(task, e)}>
-                  {task.is_completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-                </div>
-                
-                <div className="task-content">
-                  <span className="task-title">{task.title}</span>
-                  
-                  <div className="task-meta">
-                    {list && <span className="meta-badge list-badge" style={{ color: list.color || 'var(--text-muted)' }}><Hash size={12}/> {list.name}</span>}
-                    {task.scheduled_time && <span className="meta-badge time-badge"><Bell size={12}/> {task.scheduled_time.substring(0,5)}</span>}
-                    {subtasksBadge && <span className={`meta-badge subtask-badge ${isAllSubtasksDone ? 'done' : ''}`}>{subtasksBadge}</span>}
-                  </div>
-                </div>
-
-                <div className="task-actions">
-                  {task.is_starred && <Star size={16} fill="#f59e0b" color="#f59e0b" />}
-                  <div className="reorder-actions" onClick={e => e.stopPropagation()}>
-                    <button className="reorder-btn" onClick={() => moveTask(task.id, 'up')} title="Subir">
-                      <ChevronUp size={14} />
-                    </button>
-                    <button className="reorder-btn" onClick={() => moveTask(task.id, 'down')} title="Descer">
-                      <ChevronDown size={14} />
-                    </button>
-                  </div>
-                </div>
+                onToggleCompletion={toggleTaskCompletion}
+                onMoveTask={moveTask}
+                onTasksUpdate={(updatedTasks) => {
+                  setTasks(prev => prev.map(t => {
+                    const updatedTask = updatedTasks.find(ut => ut.id === t.id);
+                    return updatedTask ? updatedTask : t;
+                  }));
+                }}
+              />
+            )}
+          </div>
+        ) : (
+          <>
+            <DraggableTaskList
+              tasks={displayTasks.filter(task => task.status === 'PENDING' && !task.is_completed)}
+              taskLists={taskLists}
+              onTaskClick={(task) => {
+                setTaskToEdit(task);
+                setIsTaskModalOpen(true);
+              }}
+              onToggleCompletion={toggleTaskCompletion}
+              onMoveTask={moveTask}
+              onStartTask={startTask}
+              onDeleteTask={handleDeleteTask}
+              onTasksUpdate={(updatedTasks) => {
+                setTasks(prev => prev.map(t => {
+                  const updatedTask = updatedTasks.find(ut => ut.id === t.id);
+                  return updatedTask ? updatedTask : t;
+                }));
+              }}
+            />
+            {inProgressTasks.length > 0 && activeFilter === 'ALL' && (
+              <div className="in-progress-tasks-section">
+                <h2>Em Andamento</h2>
+             <DraggableTaskList
+                   tasks={inProgressTasks}
+                   taskLists={taskLists}
+                   onTaskClick={(task) => {
+                     setTaskToEdit(task);
+                     setIsTaskModalOpen(true);
+                   }}
+                   onToggleCompletion={toggleTaskCompletion}
+                   onMoveTask={moveTask}
+                   onRevertTask={revertTask}
+                   onCompleteTask={completeTask}
+                   onDeleteTask={handleDeleteTask}
+                   onTasksUpdate={(updatedTasks) => {
+                     setTasks(prev => prev.map(t => {
+                       const updatedTask = updatedTasks.find(ut => ut.id === t.id);
+                       return updatedTask ? updatedTask : t;
+                     }));
+                   }}
+                 />
               </div>
-            );
-          })}
-        </div>
+            )}
+          </>
+        )}
 
         <button 
           className="fab-create" 

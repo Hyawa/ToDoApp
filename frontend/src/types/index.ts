@@ -20,6 +20,10 @@ export interface Subtask {
 
 export type RecurrenceType = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'CUSTOM';
 
+export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'ARCHIVED';
+
+export type EstimatedTime = '5_MINUTES' | '15_MINUTES' | '30_MINUTES' | '1_HOUR' | '2_HOURS' | null;
+
 export interface Task {
   id: number;
   title: string;
@@ -32,10 +36,12 @@ export interface Task {
   is_completed: boolean;
   is_starred: boolean;
   position: number;
+  status: TaskStatus;
   
   start_date: string;
   due_date: string;
   scheduled_time: string | null;
+  estimated_time: EstimatedTime;
   
   recurrence_type: RecurrenceType;
   repeat_monday: boolean;

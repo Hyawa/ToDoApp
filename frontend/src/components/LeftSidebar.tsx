@@ -48,6 +48,10 @@ export function LeftSidebar({
             <CheckCircle2 size={20} className="nav-icon" />
             {expanded && <span className="nav-label">Concluídas</span>}
           </li>
+          <li className={`nav-item ${activeFilter === 'FUTURE' ? 'active' : ''}`} onClick={() => setActiveFilter('FUTURE')} title="Tarefas Futuras">
+            <ListIcon size={20} className="nav-icon" />
+            {expanded && <span className="nav-label">Tarefas Futuras</span>}
+          </li>
         </ul>
 
         <div className="sidebar-divider" />

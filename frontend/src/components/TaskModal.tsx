@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, RotateCcw, Bell, Tag as TagIcon, Star } from 'lucide-react';
-import type { Task, TaskList, RecurrenceType } from '../types';
+import type { Task, TaskList, RecurrenceType, EstimatedTime } from '../types';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -31,6 +31,7 @@ export function TaskModal({ isOpen, onClose, onSave, taskToEdit, taskLists }: Ta
 
   const [notificationOffset, setNotificationOffset] = useState<number | ''>('');
   const [hideUntilDue, setHideUntilDue] = useState<number | ''>('');
+  const [estimatedTime, setEstimatedTime] = useState<EstimatedTime>(null);
 
   useEffect(() => {
     if (taskToEdit) {
@@ -52,6 +53,7 @@ export function TaskModal({ isOpen, onClose, onSave, taskToEdit, taskLists }: Ta
       });
       setNotificationOffset(taskToEdit.notification_offset ?? '');
       setHideUntilDue(taskToEdit.hide_until_due ?? '');
+      setEstimatedTime(taskToEdit.estimated_time ?? null);
     } else {
       // Reset
       setTitle('');
@@ -68,6 +70,7 @@ export function TaskModal({ isOpen, onClose, onSave, taskToEdit, taskLists }: Ta
       });
       setNotificationOffset('');
       setHideUntilDue('');
+      setEstimatedTime(null);
     }
   }, [taskToEdit, isOpen, taskLists]);
 
@@ -77,20 +80,39 @@ export function TaskModal({ isOpen, onClose, onSave, taskToEdit, taskLists }: Ta
     e.preventDefault();
     if (!title.trim()) return;
 
-    onSave({
+    const payload = {
       id: taskToEdit?.id,
       title,
       description,
       task_list: taskList === '' ? null : Number(taskList),
       is_starred: isStarred,
       start_date: startDate,
-      due_date: startDate, // Fallback
+      due_date: startDate,
       scheduled_time: scheduledTime || null,
+      estimated_time: estimatedTime,
       recurrence_type: recurrenceType,
       ...days,
       notification_offset: notificationOffset === '' ? null : Number(notificationOffset),
       hide_until_due: hideUntilDue === '' ? null : Number(hideUntilDue),
+    };
+    
+    console.log("CREATE_TASK_PAYLOAD", {
+      title: payload.title,
+      start_date: payload.start_date,
+      due_date: payload.due_date,
+      scheduled_time: payload.scheduled_time,
+      recurrence_type: payload.recurrence_type,
+      repeat_monday: payload.repeat_monday,
+      repeat_tuesday: payload.repeat_tuesday,
+      repeat_wednesday: payload.repeat_wednesday,
+      repeat_thursday: payload.repeat_thursday,
+      repeat_friday: payload.repeat_friday,
+      repeat_saturday: payload.repeat_saturday,
+      repeat_sunday: payload.repeat_sunday,
+      createdAt: new Date().toISOString(),
     });
+    
+    onSave(payload);
     onClose();
   };
 
@@ -205,6 +227,20 @@ export function TaskModal({ isOpen, onClose, onSave, taskToEdit, taskLists }: Ta
               </select>
             </div>
 
+            <div className="form-group half">
+              <label>Tempo Estimado</label>
+              <select className="form-select" value={estimatedTime || ''} onChange={e => setEstimatedTime(e.target.value === '' ? null : e.target.value as EstimatedTime)}>
+                <option value="">Não especificado</option>
+                <option value="5_MINUTES">5 minutos</option>
+                <option value="15_MINUTES">15 minutos</option>
+                <option value="30_MINUTES">30 minutos</option>
+                <option value="1_HOUR">1 hora</option>
+                <option value="2_HOURS">2 horas</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row">
             <div className="form-group half">
               <label>Mostrar tarefa</label>
               <select className="form-select" value={hideUntilDue} onChange={e => setHideUntilDue(e.target.value === '' ? '' : Number(e.target.value))}>

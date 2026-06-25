@@ -27,3 +27,7 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = '__all__'
+        extra_kwargs = {
+            'status': {'required': False, 'default': 'PENDING'},
+            'estimated_time': {'required': False, 'allow_null': True}
+        }

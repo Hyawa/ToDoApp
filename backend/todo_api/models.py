@@ -25,6 +25,21 @@ class Task(models.Model):
         ('YEARLY', 'Anual'),
         ('CUSTOM', 'Personalizada')
     ]
+    
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendente'),
+        ('IN_PROGRESS', 'Em Andamento'),
+        ('COMPLETED', 'Concluída'),
+        ('ARCHIVED', 'Arquivada'),
+    ]
+    
+    ESTIMATED_TIME_CHOICES = [
+        ('5_MINUTES', '5 minutos'),
+        ('15_MINUTES', '15 minutos'),
+        ('30_MINUTES', '30 minutos'),
+        ('1_HOUR', '1 hora'),
+        ('2_HOURS', '2 horas'),
+    ]
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
@@ -37,11 +52,13 @@ class Task(models.Model):
     is_completed = models.BooleanField(default=False)
     is_starred = models.BooleanField(default=False)
     position = models.FloatField(default=0.0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     
     # Advanced scheduling and recurrence
     start_date = models.DateField(default=timezone.localdate)
     due_date = models.DateField(default=timezone.localdate)
     scheduled_time = models.TimeField(null=True, blank=True)
+    estimated_time = models.CharField(max_length=20, choices=ESTIMATED_TIME_CHOICES, blank=True, null=True)
     
     recurrence_type = models.CharField(max_length=20, choices=RECURRENCE_CHOICES, default='NONE')
     
